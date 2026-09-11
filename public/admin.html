@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Rangou — Admin paiements</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, sans-serif; background: #F6F4EF; margin: 0; padding: 20px; color: #1a2233; }
+  h1 { font-size: 20px; }
+  #login { max-width: 320px; margin: 60px auto; text-align: center; }
+  input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #ccc; font-size: 16px; margin-top: 10px; }
+  button { width: 100%; padding: 12px; border-radius: 10px; border: none; background: #2C4770; color: white; font-weight: 600; font-size: 15px; margin-top: 10px; cursor: pointer; }
+  button.reject { background: #B23B3B; }
+  .card { background: white; border-radius: 14px; padding: 16px; margin-bottom: 12px; border: 1px solid #e5e2d9; }
+  .row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .muted { color: #6B7385; font-size: 13px; }
+  .actions { display: flex; gap: 8px; margin-top: 10px; }
+  #list { max-width: 480px; margin: 0 auto; display: none; }
+  #empty { text-align: center; color: #6B7385; margin-top: 40px; }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <h1>Rangou — Admin</h1>
+  <p class="muted">Entrez le mot de passe admin pour voir les paiements en attente.</p>
+  <input id="password" type="password" placeholder="Mot de passe" />
+  <button onclick="login()">Se connecter</button>
+  <p id="loginError" style="color:#B23B3B;"></p>
+</div>
+
+<div id="list">
+  <h1>Paiements en attente</h1>
+  <div id="items"></div>
+  <p id="empty" style="display:none;">Aucun paiement en attente 🎉</p>
+</div>
+
+<script>
+let PASSWORD = "";
+
+function login() {
+  PASSWORD = document.getElementById("password").value;
+  fetchPending();
+}
+
+async function fetchPending() {
+  const res = await fetch("/api/admin/pending", {
+    headers: { "x-admin-password": PASSWORD },
+  });
+  if (res.status === 401) {
+    document.getElementById("loginError").textContent = "Mot de passe incorrect.";
+    return;
+  }
+  document.getElementById("loginError").textContent = "";
+  document.getElementById("login").style.display = "none";
+  document.getElementById("list").style.display = "block";
+
+  const data = await res.json();
+  const itemsEl = document.getElementById("items");
+  itemsEl.innerHTML = "";
+  if (data.pending.length === 0) {
+    document.getElementById("empty").style.display = "block";
+    return;
+  }
+  document.getElementById("empty").style.display = "none";
+
+  data.pending.forEach((tx) => {
+    const el = document.createElement("div");
+    el.className = "card";
+    el.innerHTML = `
+      <div class="row"><strong>${tx.nom}</strong><span>${tx.montant} FCFA</span></div>
+      <div class="muted">${tx.telephone} · ${tx.abonnementForm?.type || ""} · ${tx.abonnementForm?.duree || ""} mois</div>
+      <div class="muted">Demandé le ${new Date(tx.creeLe).toLocaleString("fr-FR")}</div>
+      <div class="actions">
+        <button onclick="confirmPayment('${tx.id}')">✅ Confirmer (payé)</button>
+        <button class="reject" onclick="rejectPayment('${tx.id}')">❌ Rejeter</button>
+      </div>
+    `;
+    itemsEl.appendChild(el);
+  });
+}
+
+async function confirmPayment(id) {
+  if (!confirm("Confirmer ce paiement ? La carte sera créée immédiatement.")) return;
+  await fetch("/api/admin/confirm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-admin-password": PASSWORD },
+    body: JSON.stringify({ id }),
+  });
+  fetchPending();
+}
+
+async function rejectPayment(id) {
+  if (!confirm("Rejeter ce paiement ? L'acheteur devra recommencer.")) return;
+  await fetch("/api/admin/reject", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-admin-password": PASSWORD },
+    body: JSON.stringify({ id }),
+  });
+  fetchPending();
+}
+
+setInterval(() => { if (PASSWORD) fetchPending(); }, 10000);
+</script>
+</body>
+</html>
